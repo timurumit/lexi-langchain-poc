@@ -4,7 +4,7 @@ from langchain.chat_models import ChatOpenAI
 
 #getting the api key from the environment variable
 os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
-
+API = os.getenv("OPENAI_API_KEY")
 #creating an instance of the chat model
 chat = ChatOpenAI(
     openai_api_key=os.getenv("OPENAI_API_KEY"),
