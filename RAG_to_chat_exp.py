@@ -8,6 +8,10 @@ from openai import OpenAI
 from langchain.chat_models import ChatOpenAI
 from langchain.chains import RetrievalQA
 
+from langchain.chains.conversation.memory import ConversationBufferWindowMemory
+from langchain.agents import Tool
+from langchain.agents import initialize_agent
+
 class LexiVector: 
     def __init__(self): 
         self.vectorstore = "geeksforgeeks"
@@ -26,7 +30,7 @@ def setup_everything():
     index = pc.Index(index_name)
     text_field = "text"
 
-    embeddings = OpenAIEmbeddings(openai_api_key=openai.api_key)
+    embeddings = OpenAIEmbeddings(openai_api_key=openai.api_key, model=embed_model)
 
     client = OpenAI(
     api_key=os.environ['OPENAI_API_KEY'],  # this is also the default, it can be omitted
@@ -44,7 +48,7 @@ def setup_everything():
     return LexiVector
 
 def ask(vectorstore,query,embeddings):
-    #query = "Regulasi apa yang mengatur merger perusahaan?"
+    #query = "UU perbankan itu nomor berapa?"
 
     docsearch = PineconeVectorStore.from_existing_index(index_name, embeddings)
     docs = docsearch.similarity_search(
@@ -68,37 +72,70 @@ def send_to_openai(augmented_query):
         temperature=0.0
     )
 
+    # conversational memory
+    conversational_memory = ConversationBufferWindowMemory(
+    memory_key='chat_history',
+    k=5,
+    return_messages=True
+    )
+    
     #https://colab.research.google.com/github/pinecone-io/examples/blob/master/docs/langchain-retrieval-augmentation.ipynb#scrollTo=0qf5e3xf3ggq
-    # qa = RetrievalQA.from_chain_type(
-    #     llm=llm,
-    #     chain_type="stuff",
-    #     retriever=docs.as_retriever()
-    # )
-
-    ##### OPENAI RETURN
-    from langchain.schema import(
-        SystemMessage,
-        HumanMessage,
-        AIMessage
+    qa = RetrievalQA.from_chain_type(
+        llm=llm,
+        chain_type="stuff",
+        retriever=vectorstore.as_retriever()
     )
 
-    #creating a list of messages
-    messages = [
-        SystemMessage(content="You are a helpful assistant!"),
-        HumanMessage(content=augmented_query),
-        #AIMessage(content="Hello!"),
+    qa.run(augmented_query)
+
+    tools = [
+        Tool(
+            name='Knowledge Base',
+            func=qa.run,
+            description=(
+                'use this tool when answering general knowledge queries to get '
+                'more information about the topic'
+            )
+        )
     ]
 
-    responses = llm(messages)
-    print("Answer:")
-    print(responses.content)
+    agent = initialize_agent(
+        agent='chat-conversational-react-description',
+        tools=tools,
+        llm=llm,
+        verbose=True,
+        max_iterations=3,
+        early_stopping_method='generate',
+        memory=conversational_memory
+    )
+
+    # ##### OPENAI RETURN
+    # from langchain.schema import(
+    #     SystemMessage,
+    #     HumanMessage,
+    #     AIMessage
+    # )
+
+    # #creating a list of messages
+    # messages = [
+    #     SystemMessage(content="You are a helpful assistant!"),
+    #     HumanMessage(content=augmented_query),
+    #     #AIMessage(content="Hello!"),
+    # ]
+
+    # responses = llm(messages)
+    # print("Answer:")
+    # print(responses.content)
 
 ### Execute here ###
 index_name = "lexi-dev-index-1"
 vectorstore=setup_everything()
 
-val = ""
-while val.lower() != "exit":
-    val = input("Enter your question: ")
-    if val.lower() != "exit":
-        ask(vectorstore.vectorstore, val, vectorstore.embeddings)
+val = input("Enter your question: ")
+agent(query)
+
+# val = ""
+# while val.lower() != "exit":
+#     val = input("Enter your question: ")
+#     if val.lower() != "exit":
+#         ask(vectorstore.vectorstore, val, vectorstore.embeddings)
